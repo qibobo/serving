@@ -49,6 +49,7 @@ type activationHandler struct {
 	tracingTransport http.RoundTripper
 	throttler        Throttler
 	bufferPool       httputil.BufferPool
+	requestNumber    int
 }
 
 // New constructs a new http.Handler that deals with revision activation.
@@ -117,6 +118,7 @@ func (a *activationHandler) proxyRequest(logger *zap.SugaredLogger, w http.Respo
 	proxy.FlushInterval = network.FlushInterval
 	proxy.ErrorHandler = pkgnet.ErrorHandler(logger)
 	util.SetupHeaderPruning(proxy)
-
+	a.requestNumber++
+	logger.Infow("-------total handled request number", "target", target, "no", a.requestNumber)
 	proxy.ServeHTTP(w, r)
 }

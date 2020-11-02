@@ -20,6 +20,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -308,7 +309,7 @@ func buildServer(ctx context.Context, env config, healthState *health.State, rp 
 		Host:   net.JoinHostPort("127.0.0.1", strconv.Itoa(env.UserPort)),
 	}
 
-	maxIdleConns := 1000 // TODO: somewhat arbitrary value for CC=0, needs experimental validation.
+	maxIdleConns := 10000 // TODO: somewhat arbitrary value for CC=0, needs experimental validation.
 	if env.ContainerConcurrency > 0 {
 		maxIdleConns = env.ContainerConcurrency
 	}
@@ -328,6 +329,7 @@ func buildServer(ctx context.Context, env config, healthState *health.State, rp 
 	// Create queue handler chain.
 	// Note: innermost handlers are specified first, ie. the last handler in the chain will be executed first.
 	var composedHandler http.Handler = httpProxy
+
 	if metricsSupported {
 		composedHandler = requestAppMetricsHandler(logger, composedHandler, breaker, env)
 	}
@@ -345,7 +347,7 @@ func buildServer(ctx context.Context, env config, healthState *health.State, rp 
 	// We might want sometimes capture the probes/healthchecks in the request
 	// logs. Hence we need to have RequestLogHandler to be the first one.
 	composedHandler = pushRequestLogHandler(logger, composedHandler, env)
-
+	composedHandler = getFileDescriptorHandler(logger, composedHandler)
 	return pkgnet.NewServer(":"+strconv.Itoa(env.QueueServingPort), composedHandler)
 }
 
@@ -489,4 +491,34 @@ func flush(logger *zap.SugaredLogger) {
 	os.Stdout.Sync()
 	os.Stderr.Sync()
 	metrics.FlushExporter()
+}
+func getFileDescriptorHandler(logger *zap.SugaredLogger, next http.Handler) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		d, err := os.Open(fmt.Sprintf("/proc/%d/fd", os.Getpid()))
+		if err != nil {
+			logger.Info("failed to get file descriptors")
+		}
+		defer d.Close()
+
+		names, err := d.Readdirnames(-1)
+		if err != nil {
+			logger.Info("failed to get file descriptors")
+		}
+
+		logger.Info("-----file descriptors ", len(names))
+		dat, err := ioutil.ReadFile("/proc/sys/fs/file-nr")
+		logger.Info("-----file-nr ", string(dat))
+		socketInfo := readSockStat(logger)
+		logger.Info("-----socketStat ", socketInfo)
+		next.ServeHTTP(w, r)
+	}
+
+}
+func readSockStat(logger *zap.SugaredLogger) string {
+	b, err := ioutil.ReadFile("/proc/net/sockstat")
+	if err != nil {
+		logger.Errorw("Unable to read sockstat", zap.Error(err))
+		return ""
+	}
+	return string(b)
 }

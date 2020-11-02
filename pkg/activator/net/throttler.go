@@ -232,6 +232,7 @@ func (rt *revisionThrottler) try(ctx context.Context, function func(string) erro
 			}
 			defer cb()
 			// We already reserved a guaranteed spot. So just execute the passed functor.
+			rt.logger.Infow("======get dest from pods", "dest", tracker.dest, "weight", tracker.getWeight(), "len-trackers", len(rt.assignedTrackers), "trackers", rt.assignedTrackers)
 			ret = function(tracker.dest)
 		}); err != nil {
 			return err
@@ -518,6 +519,7 @@ func (t *Throttler) run(updateCh <-chan revisionDestsUpdate) {
 
 // Try waits for capacity and then executes function, passing in a l4 dest to send a request
 func (t *Throttler) Try(ctx context.Context, function func(string) error) error {
+	t.logger.Infow("====begin to try")
 	rt, err := t.getOrCreateRevisionThrottler(util.RevIDFrom(ctx))
 	if err != nil {
 		return err

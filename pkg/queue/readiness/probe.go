@@ -19,6 +19,7 @@ package readiness
 import (
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"sync"
 	"time"
@@ -147,6 +148,7 @@ func (p *Probe) doProbe(probe func(time.Duration) error) error {
 		return wait.PollImmediate(retryInterval, p.pollTimeout, func() (bool, error) {
 			if err := probe(aggressiveProbeTimeout); err != nil {
 				fmt.Fprintln(p.out, "aggressive probe error: ", err)
+				log.Printf("aggressive probe error: %s", err)
 				// Reset count of consecutive successes to zero.
 				p.count = 0
 				return false, nil
